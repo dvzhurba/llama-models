@@ -54,10 +54,12 @@ pip install torch fairscale fire blobfile
 ```
 
 After installing the dependencies, you can run the example scripts (within `llama_models/scripts/` sub-directory) as follows:
+
+**Note**: This repository now supports running on macOS without CUDA. See the [macOS section](#running-on-macos-cpu-only) below for specific instructions.
 ```bash
 #!/bin/bash
 
-CHECKPOINT_DIR=~/.llama/checkpoints/Meta-Llama3.1-8B-Instruct
+CHECKPOINT_DIR=~/.llama/checkpoints/Llama3.2-1B-Instruct
 PYTHONPATH=$(git rev-parse --show-toplevel) torchrun llama_models/scripts/example_chat_completion.py $CHECKPOINT_DIR
 ```
 
@@ -75,6 +77,42 @@ PYTHONPATH=$(git rev-parse --show-toplevel) torchrun \
 ```
 
 For more flexibility in running inference (including running FP8 inference), please see the [`Llama Stack`](https://github.com/meta-llama/llama-stack) repository.
+
+## Running on macOS (CPU-only)
+
+This repository has been updated to support running Llama models on macOS without CUDA. The following changes have been made for CPU compatibility:
+
+### Quick Start (macOS)
+```bash
+# Set PYTHONPATH to the repository root
+export PYTHONPATH=/path/to/llama-models
+
+# Run chat completion with default Llama3.2-1B-Instruct model
+torchrun models/scripts/example_chat_completion.py
+
+# Or specify a custom checkpoint directory
+torchrun models/scripts/example_chat_completion.py --ckpt_dir ~/.llama/checkpoints/Llama3.2-1B-Instruct
+
+# For text completion (base models)
+torchrun models/scripts/example_text_completion.py --ckpt_dir ~/.llama/checkpoints/Llama3.2-1B
+```
+
+### Key Features for macOS:
+- ✅ **CPU-only inference**: No CUDA required
+- ✅ **Automatic device detection**: Uses CPU when CUDA is not available
+- ✅ **Path expansion**: Handles tilde (~) in checkpoint paths
+- ✅ **Distributed backend**: Uses 'gloo' backend for CPU compatibility
+
+### Troubleshooting:
+- **NCCL errors**: The code now uses 'gloo' backend instead of 'nccl'
+- **CUDA errors**: All `.cuda()` calls are wrapped with availability checks
+- **Path issues**: Tilde expansion is handled automatically
+- **Model loading**: Default checkpoint directory updated to use available models
+
+### Performance Notes:
+- CPU inference is slower than GPU but fully functional
+- Llama3.2-1B models work well on modern Macs
+- For better performance, consider using smaller models or cloud GPU instances
 
 
 ## Access to Hugging Face
