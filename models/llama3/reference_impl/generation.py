@@ -100,7 +100,7 @@ class Llama:
         """
 
         if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group("nccl")
+            torch.distributed.init_process_group("gloo")
 
         if not model_parallel_is_initialized():
             if model_parallel_size is None:
@@ -108,7 +108,8 @@ class Llama:
             initialize_model_parallel(model_parallel_size)
 
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        torch.cuda.set_device(local_rank)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
 
         torch.manual_seed(seed)
 
@@ -117,14 +118,18 @@ class Llama:
 
         start_time = time.time()
 
-        checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
-        assert len(checkpoints) > 0, f"no checkpoint files found in {ckpt_dir}"
+        # Expand tilde in path if present
+        expanded_ckpt_dir = os.path.expanduser(ckpt_dir)
+        checkpoints = sorted(Path(expanded_ckpt_dir).glob("*.pth"))
+        print(f"Found {len(checkpoints)} checkpoint files: {[c.name for c in checkpoints]}")
+        print(f"Model parallel size: {model_parallel_size}")
+        assert len(checkpoints) > 0, f"no checkpoint files found in {expanded_ckpt_dir}"
         assert model_parallel_size == len(
             checkpoints
         ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
         ckpt_path = checkpoints[get_model_parallel_rank()]
         checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-        with open(Path(ckpt_dir) / "params.json", "r") as f:
+        with open(Path(expanded_ckpt_dir) / "params.json", "r") as f:
             params = json.loads(f.read())
 
         model_args: ModelArgs = ModelArgs(
@@ -138,10 +143,14 @@ class Llama:
             tokenizer = Tokenizer.get_instance()
 
         assert model_args.vocab_size == tokenizer.n_words
-        if torch.cuda.is_bf16_supported():
-            torch.set_default_tensor_type(torch.cuda.BFloat16Tensor)
+        if torch.cuda.is_available():
+            if torch.cuda.is_bf16_supported():
+                torch.set_default_tensor_type(torch.cuda.BFloat16Tensor)
+            else:
+                torch.set_default_tensor_type(torch.cuda.HalfTensor)
         else:
-            torch.set_default_tensor_type(torch.cuda.HalfTensor)
+            # Use CPU tensors for non-CUDA environments
+            torch.set_default_tensor_type(torch.FloatTensor)
         if model_args.vision_chunk_size > 0:
             from .multimodal.model import CrossAttentionTransformer
 
@@ -213,14 +222,15 @@ class Llama:
             )
 
         pad_id = self.tokenizer.pad_id
-        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=device)
         for k, t in enumerate(prompt_tokens):
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=device)
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
         prev_pos = 0
-        eos_reached = torch.tensor([False] * bsz, device="cuda")
+        eos_reached = torch.tensor([False] * bsz, device=device)
         input_text_mask = tokens != pad_id
 
         if echo:
@@ -237,7 +247,7 @@ class Llama:
         for cur_pos in range(min_prompt_len, total_len):
             if is_vision:
                 position_ids = torch.arange(
-                    prev_pos, cur_pos, dtype=torch.long, device="cuda"
+                    prev_pos, cur_pos, dtype=torch.long, device=device
                 )
                 text_only_inference = model_input.vision is None
                 logits = self.model.forward(

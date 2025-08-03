@@ -8,6 +8,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
 
+import os
 from typing import Optional
 
 import fire
@@ -17,7 +18,7 @@ from termcolor import cprint
 
 
 def run_main(
-    ckpt_dir: str,
+    ckpt_dir: str = '~/.llama/checkpoints/Llama3.2-1B-Instruct',
     temperature: float = 0.6,
     top_p: float = 0.9,
     max_seq_len: int = 512,
@@ -25,6 +26,18 @@ def run_main(
     max_gen_len: int = 64,
     model_parallel_size: Optional[int] = None,
 ):
+    # Set environment variables for single-machine distributed training
+    if "RANK" not in os.environ:
+        os.environ["RANK"] = "0"
+    if "WORLD_SIZE" not in os.environ:
+        os.environ["WORLD_SIZE"] = "1"
+    if "LOCAL_RANK" not in os.environ:
+        os.environ["LOCAL_RANK"] = "0"
+    if "MASTER_ADDR" not in os.environ:
+        os.environ["MASTER_ADDR"] = "localhost"
+    if "MASTER_PORT" not in os.environ:
+        os.environ["MASTER_PORT"] = "29500"
+
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
         max_seq_len=max_seq_len,

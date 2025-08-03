@@ -23,7 +23,7 @@ from llama_models.llama3.reference_impl.generation import Llama
 
 
 def run_main(
-    ckpt_dir: str,
+    ckpt_dir: str = '~/.llama/checkpoints/Llama3.2-1B-Instruct',
     temperature: float = 0.6,
     top_p: float = 0.9,
     max_seq_len: int = 512,
